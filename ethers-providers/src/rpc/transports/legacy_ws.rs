@@ -345,7 +345,10 @@ where
         trace!(msg=?inner, "received message");
         let (id, result) = match serde_json::from_str(&inner)? {
             Response::Success { id, result } => (id, Ok(result.to_owned())),
-            Response::Error { id, error } => (id, Err(error)),
+            Response::Error { id, error } => {
+                log::debug!("Received rpc error message: {}", inner);
+                (id, Err(error))
+            }
             Response::Notification { params, .. } => return self.handle_notification(params),
         };
 
