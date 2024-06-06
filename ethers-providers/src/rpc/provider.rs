@@ -170,10 +170,12 @@ impl<P: JsonRpcClient> Provider<P> {
         // https://docs.rs/tracing/0.1.22/tracing/span/struct.Span.html#in-asynchronous-code
         let res = async move {
             trace!("tx");
+            let params_str = serde_json::to_string(&params).unwrap();
             let res: R = self.inner.request(method, params).await.map_err(Into::into)?;
             tracing::info!(
                 method,
-                response = serde_json::to_string(&res).unwrap(),
+                params = params_str,
+                response = format!("{:?}", serde_json::to_string(&res)),
                 "got raw web3 rpc response."
             );
             trace!(rx = ?serde_json::to_string(&res)?);
