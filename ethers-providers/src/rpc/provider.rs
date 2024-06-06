@@ -172,12 +172,6 @@ impl<P: JsonRpcClient> Provider<P> {
             trace!("tx");
             let params_str = serde_json::to_string(&params).unwrap();
             let res: R = self.inner.request(method, params).await.map_err(Into::into)?;
-            tracing::info!(
-                method,
-                params = params_str,
-                response = format!("{:?}", serde_json::to_string(&res)),
-                "got raw web3 rpc response."
-            );
             trace!(rx = ?serde_json::to_string(&res)?);
             Ok::<_, ProviderError>(res)
         }
