@@ -1,4 +1,5 @@
 use ethers_core::types::SyncingStatus;
+use log::info;
 
 use crate::{
     call_raw::CallBuilder,
@@ -170,6 +171,11 @@ impl<P: JsonRpcClient> Provider<P> {
         let res = async move {
             trace!("tx");
             let res: R = self.inner.request(method, params).await.map_err(Into::into)?;
+            tracing::info!(
+                method,
+                response = serde_json::to_string(&res).unwrap(),
+                "got raw web3 rpc response."
+            );
             trace!(rx = ?serde_json::to_string(&res)?);
             Ok::<_, ProviderError>(res)
         }
