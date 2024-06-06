@@ -188,6 +188,7 @@ impl JsonRpcClient for Ws {
         params: T,
     ) -> Result<R, ClientError> {
         let next_id = self.id.fetch_add(1, Ordering::SeqCst);
+        let params_str = serde_json::to_string(&params).unwrap();
 
         // send the message
         let (sender, receiver) = oneshot::channel();
