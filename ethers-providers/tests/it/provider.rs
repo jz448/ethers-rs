@@ -64,7 +64,7 @@ mod eth_tests {
 
     async fn generic_watch_blocks_test<M: Middleware>(provider: M) {
         let stream = provider.watch_blocks().await.unwrap().stream();
-        let hashes = stream.take(3).collect::<Vec<H256>>().await;
+        let hashes = stream.take(3).map(|x| x.unwrap_or_default()).collect::<Vec<H256>>().await;
         let block = provider.get_block(BlockNumber::Latest).await.unwrap().unwrap();
         assert_eq!(block.hash.unwrap(), *hashes.last().unwrap());
     }

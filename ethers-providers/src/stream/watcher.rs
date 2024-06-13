@@ -1,6 +1,6 @@
 use crate::{
     utils::{interval, PinBoxFut},
-    JsonRpcClient, Middleware, Provider,
+    JsonRpcClient, Middleware, Provider, ProviderError,
 };
 use ethers_core::types::U256;
 use futures_core::stream::Stream;
@@ -24,7 +24,7 @@ pub const DEFAULT_LOCAL_POLL_INTERVAL: Duration = Duration::from_millis(100);
 enum FilterWatcherState<'a, R> {
     WaitForInterval,
     GetFilterChanges(PinBoxFut<'a, Vec<R>>),
-    NextItem(IntoIter<R>),
+    NextItem(IntoIter<Result<R, ProviderError>>),
 }
 
 #[must_use = "filters do nothing unless you stream them"]
@@ -76,7 +76,7 @@ where
     P: JsonRpcClient,
     R: Serialize + Send + Sync + DeserializeOwned + Debug + 'a,
 {
-    type Item = R;
+    type Item = Result<R, ProviderError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
@@ -95,9 +95,11 @@ where
                     // vector. Should we make this return a Result instead? Ideally if we're
                     // in a streamed loop we wouldn't want the loop to terminate if an error
                     // is encountered (since it might be a temporary error).
-                    let items: Vec<R> =
-                        futures_util::ready!(fut.as_mut().poll(cx)).unwrap_or_default();
-                    FilterWatcherState::NextItem(items.into_iter())
+
+                    match futures_util::ready!(fut.as_mut().poll(cx)) {
+                        Ok(vec) => FilterWatcherState::NextItem(vec.into_iter().map(Ok).collect::<Vec<_>>().into_iter()),
+                        Err(e) => FilterWatcherState::NextItem(vec![Err(e)].into_iter()),
+                    }
                 }
                 // Consume 1 element from the vector. If more elements are in the vector,
                 // the next call will immediately go to this branch instead of trying to get
@@ -108,6 +110,7 @@ where
                         cx.waker().wake_by_ref();
                         return Poll::Ready(item)
                     }
+                    
                     FilterWatcherState::WaitForInterval
                 }
             };

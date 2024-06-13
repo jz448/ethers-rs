@@ -24,45 +24,45 @@ async fn main() -> Result<()> {
     let address: Address = WETH_ADDRESS.parse()?;
     let contract = IERC20::new(address, client);
 
-    listen_all_events(&contract).await?;
-    listen_specific_events(&contract).await?;
+    // listen_all_events(&contract).await?;
+    // listen_specific_events(&contract).await?;
 
     Ok(())
 }
 
-/// Given a contract instance, subscribe to all possible events.
-/// This allows to centralize the event handling logic and dispatch
-/// proper actions.
-///
-/// Note that all event bindings have been generated
-/// by abigen. Feel free to investigate the abigen expanded code to
-/// better understand types and functionalities.
-async fn listen_all_events(contract: &IERC20<Provider<Ws>>) -> Result<()> {
-    let events = contract.events().from_block(16232696);
-    let mut stream = events.stream().await?.take(1);
+// /// Given a contract instance, subscribe to all possible events.
+// /// This allows to centralize the event handling logic and dispatch
+// /// proper actions.
+// ///
+// /// Note that all event bindings have been generated
+// /// by abigen. Feel free to investigate the abigen expanded code to
+// /// better understand types and functionalities.
+// async fn listen_all_events(contract: &IERC20<Provider<Ws>>) -> Result<()> {
+//     let events = contract.events().from_block(16232696);
+//     let mut stream = events.stream().await?.take(1);
 
-    while let Some(Ok(evt)) = stream.next().await {
-        match evt {
-            IERC20Events::ApprovalFilter(f) => println!("{f:?}"),
-            IERC20Events::TransferFilter(f) => println!("{f:?}"),
-        }
-    }
+//     while let Some(Ok(evt)) = stream.next().await {
+//         match evt {
+//             IERC20Events::ApprovalFilter(f) => println!("{f:?}"),
+//             IERC20Events::TransferFilter(f) => println!("{f:?}"),
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-/// Given a contract instance subscribe to a single type of event.
-///
-/// Note that all event bindings have been generated
-/// by abigen. Feel free to investigate the abigen expanded code to
-/// better understand types and functionalities.
-async fn listen_specific_events(contract: &IERC20<Provider<Ws>>) -> Result<()> {
-    let events = contract.event::<ApprovalFilter>().from_block(16232696);
-    let mut stream = events.stream().await?.take(1);
+// /// Given a contract instance subscribe to a single type of event.
+// ///
+// /// Note that all event bindings have been generated
+// /// by abigen. Feel free to investigate the abigen expanded code to
+// /// better understand types and functionalities.
+// async fn listen_specific_events(contract: &IERC20<Provider<Ws>>) -> Result<()> {
+//     let events = contract.event::<ApprovalFilter>().from_block(16232696);
+//     let mut stream = events.stream().await?.take(1);
 
-    while let Some(Ok(f)) = stream.next().await {
-        println!("ApprovalFilter event: {f:?}");
-    }
+//     while let Some(Ok(f)) = stream.next().await {
+//         println!("ApprovalFilter event: {f:?}");
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }

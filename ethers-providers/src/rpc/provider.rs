@@ -1,5 +1,4 @@
 use ethers_core::types::SyncingStatus;
-use log::info;
 
 use crate::{
     call_raw::CallBuilder,
@@ -1646,7 +1645,7 @@ mod tests {
 
         let stream = provider.watch_blocks().await.unwrap().stream();
 
-        let hashes: Vec<H256> = stream.take(num_blocks).collect::<Vec<H256>>().await;
+        let hashes: Vec<H256> = stream.take(num_blocks).map(|x| x.unwrap_or_default()).collect::<Vec<H256>>().await;
         for (i, hash) in hashes.iter().enumerate() {
             let block = provider.get_block(start_block + i as u64 + 1).await.unwrap().unwrap();
             assert_eq!(*hash, block.hash.unwrap());
@@ -1695,7 +1694,7 @@ mod tests {
             tx_hashes.push(provider.send_transaction(tx.clone(), None).await.unwrap());
         }
 
-        let hashes: Vec<H256> = stream.take(num_txs).collect::<Vec<H256>>().await;
+        let hashes: Vec<H256> = stream.take(num_txs).map(|x| x.unwrap_or_default()).collect::<Vec<H256>>().await;
         assert_eq!(tx_hashes, hashes);
     }
 

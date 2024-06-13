@@ -204,7 +204,7 @@ impl JsonRpcClient for Ws {
         // wait for the response (the request itself may have errors as well)
         let res = receiver.await??;
 
-        tracing::info!(
+        tracing::debug!(
             method,
             params = params_str,
             response = format!("{:?}", res),
