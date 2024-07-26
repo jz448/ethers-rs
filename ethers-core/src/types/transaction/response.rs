@@ -10,6 +10,7 @@ use crate::{
     },
     utils::keccak256,
 };
+use ethabi::ethereum_types::H160;
 use rlp::{Decodable, DecoderError, RlpStream};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -398,6 +399,78 @@ impl Transaction {
         let from = self.recover_from()?;
         self.from = from;
         Ok(from)
+    }
+
+    pub fn decode_to_address(rlp: &rlp::Rlp) -> Result<Option<H160>, DecoderError> {
+        let tx_to;
+
+        // only untyped legacy transactions are lists
+        if rlp.is_list() {
+            // Legacy (0x00)
+            // use the original rlp
+            tx_to = decode_to(rlp, &mut 3)?
+        } else {
+            // if it is not enveloped then we need to use rlp.as_raw instead of rlp.data
+            let first_byte = *rlp.as_raw().first().ok_or(DecoderError::Custom("empty slice"))?;
+            let (first, data) = if first_byte <= 0x7f {
+                (first_byte, rlp.as_raw())
+            } else {
+                let data = rlp.data()?;
+                let first = *data.first().ok_or(DecoderError::Custom("empty slice"))?;
+                (first, data)
+            };
+
+            let bytes = data.get(1..).ok_or(DecoderError::Custom("no tx body"))?;
+            let rest = rlp::Rlp::new(bytes);
+            match first {
+                0x01 => {
+                    tx_to = decode_to(&rest, &mut 4)?;
+                }
+                0x02 => {
+                    tx_to = decode_to(&rest, &mut 5)?;
+                }
+                _ => return Err(DecoderError::Custom("invalid tx type")),
+            }
+        }
+
+        Ok(tx_to)
+    }
+
+    pub fn decode_basic(rlp: &rlp::Rlp) -> Result<Self, DecoderError> {
+        let mut txn = Self { hash: H256(keccak256(rlp.as_raw())), ..Default::default() };
+        // we can get the type from the first value
+        let mut offset = 0;
+
+        // only untyped legacy transactions are lists
+        if rlp.is_list() {
+            // Legacy (0x00)
+            // use the original rlp
+            txn.decode_base_legacy(rlp, &mut offset)?;
+        } else {
+            // if it is not enveloped then we need to use rlp.as_raw instead of rlp.data
+            let first_byte = *rlp.as_raw().first().ok_or(DecoderError::Custom("empty slice"))?;
+            let (first, data) = if first_byte <= 0x7f {
+                (first_byte, rlp.as_raw())
+            } else {
+                let data = rlp.data()?;
+                let first = *data.first().ok_or(DecoderError::Custom("empty slice"))?;
+                (first, data)
+            };
+
+            let bytes = data.get(1..).ok_or(DecoderError::Custom("no tx body"))?;
+            let rest = rlp::Rlp::new(bytes);
+            match first {
+                0x01 => {
+                    txn.decode_base_eip2930(&rest, &mut offset)?;
+                }
+                0x02 => {
+                    txn.decode_base_eip1559(&rest, &mut offset)?;
+                }
+                _ => return Err(DecoderError::Custom("invalid tx type")),
+            }
+        }
+
+        Ok(txn)
     }
 }
 
