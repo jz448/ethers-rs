@@ -465,10 +465,11 @@ where
     async fn tick(&mut self) -> Result<(), ClientError> {
         use std::time::Duration;
 
+        use futures_util::FutureExt;
+
         let timeout = tokio::time::sleep(Duration::from_secs(self.timeout));
-        tokio::pin!(timeout); // You need to pin the timeout future to use in tokio::select!
         
-        tokio::select! {
+        futures_util::select! {
             // Handle requests
             instruction = self.instructions.select_next_some() => {
                 self.service(instruction).await?;
@@ -484,7 +485,7 @@ where
                     return Err(ClientError::UnexpectedClose);
                 },
             },
-            _ = &mut timeout => {
+            _ = timeout.fuse() => {
                 // Timeout reached
                 return Err(ClientError::TimedOut);
             }
