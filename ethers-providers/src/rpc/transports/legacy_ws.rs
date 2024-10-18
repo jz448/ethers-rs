@@ -19,7 +19,7 @@ use std::{
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
-    },
+    }, u64,
 };
 use thiserror::Error;
 use tracing::trace;
@@ -137,6 +137,24 @@ impl Ws {
         Self { id: Arc::new(AtomicU64::new(1)), instructions: sink }
     }
 
+    /// Initializes a new WebSocket Client, given a Stream/Sink Websocket implementer and timeout.
+    /// The websocket connection must be initiated separately.
+    pub fn new_with_timeout<S>(ws: S, timeout: u64) -> Self
+    where
+        S: Send
+            + Sync
+            + Stream<Item = WsStreamItem>
+            + Sink<Message, Error = WsError>
+            + Unpin
+            + 'static,
+    {
+        let (sink, stream) = mpsc::unbounded();
+        // Spawn the server
+        WsServer::new_with_timeout(ws, stream, timeout).spawn();
+
+        Self { id: Arc::new(AtomicU64::new(1)), instructions: sink }
+    }
+
     /// Returns true if the WS connection is active, false otherwise
     pub fn ready(&self) -> bool {
         !self.instructions.is_closed()
@@ -236,6 +254,7 @@ struct WsServer<S> {
 
     pending: BTreeMap<u64, Pending>,
     subscriptions: BTreeMap<U256, Subscription>,
+    timeout: u64,
 }
 
 impl<S> WsServer<S>
@@ -251,6 +270,20 @@ where
             instructions: requests.fuse(),
             pending: BTreeMap::default(),
             subscriptions: BTreeMap::default(),
+            timeout: u64::MAX,
+        }
+    }
+
+    /// Instantiates the Websocket Server
+    fn new_with_timeout(ws: S, requests: mpsc::UnboundedReceiver<Instruction>, timeout: u64) -> Self {
+        Self {
+            // Fuse the 2 steams together, so that we can `select` them in the
+            // Stream implementation
+            ws: ws.fuse(),
+            instructions: requests.fuse(),
+            pending: BTreeMap::default(),
+            subscriptions: BTreeMap::default(),
+            timeout: timeout,
         }
     }
 
@@ -430,7 +463,12 @@ where
     #[allow(clippy::single_match)]
     #[cfg(not(target_arch = "wasm32"))]
     async fn tick(&mut self) -> Result<(), ClientError> {
-        futures_util::select! {
+        use std::time::Duration;
+
+        let timeout = tokio::time::sleep(Duration::from_secs(self.timeout));
+        tokio::pin!(timeout); // You need to pin the timeout future to use in tokio::select!
+        
+        tokio::select! {
             // Handle requests
             instruction = self.instructions.select_next_some() => {
                 self.service(instruction).await?;
@@ -445,6 +483,10 @@ where
                 None => {
                     return Err(ClientError::UnexpectedClose);
                 },
+            },
+            _ = &mut timeout => {
+                // Timeout reached
+                return Err(ClientError::TimedOut);
             }
         };
 
@@ -497,6 +539,10 @@ pub enum ClientError {
     /// Something caused the websocket to close
     #[error("WebSocket connection closed unexpectedly")]
     UnexpectedClose,
+
+    /// Something caused the websocket to time out
+    #[error("WebSocket connection timed out")]
+    TimedOut,
 
     /// Could not create an auth header for websocket handshake
     #[error(transparent)]
