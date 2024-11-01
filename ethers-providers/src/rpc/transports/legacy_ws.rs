@@ -463,23 +463,40 @@ where
     #[allow(clippy::single_match)]
     #[cfg(not(target_arch = "wasm32"))]
     async fn tick(&mut self) -> Result<(), ClientError> {
+        use std::time::Instant;
+
         use futures_util::FutureExt;
         
-        let keepalive_interval = 10;
-        let mut timeout_interval = self.timeout;
+        let keepalive_interval_ms = 10_000;
+        let mut timeout_interval_ms = self.timeout * 1_000;
 
         loop {
-            let keepalive = tokio::time::sleep(std::time::Duration::from_secs(keepalive_interval));
-            let timeout = tokio::time::sleep(std::time::Duration::from_secs(timeout_interval));
+            let keepalive = tokio::time::sleep(std::time::Duration::from_millis(keepalive_interval_ms));
+            let timeout = tokio::time::sleep(std::time::Duration::from_millis(timeout_interval_ms));
+            let instant = Instant::now();
 
             futures_util::select! {
+                // Handle keep alive
                 _ = keepalive.fuse() => {
                     self.ws.send(Message::Ping(vec![])).await?;
+
+                    if timeout_interval_ms <= keepalive_interval_ms {
+                        return Err(ClientError::TimedOut);
+                    } else {
+                        timeout_interval_ms -= keepalive_interval_ms;
+                    }
                 },
                 // Handle requests
                 instruction = self.instructions.select_next_some() => {
                     self.service(instruction).await?;
-                    return Ok(());
+                    
+                    let elapsed = instant.elapsed().as_millis() as u64;
+
+                    if timeout_interval_ms <= elapsed {
+                        return Err(ClientError::TimedOut);
+                    } else {
+                        timeout_interval_ms -= elapsed;
+                    }
                 },
                 // Handle ws messages
                 resp = self.ws.next() => match resp {
@@ -495,17 +512,12 @@ where
                         return Err(ClientError::UnexpectedClose);
                     },
                 },
+                // Handle timeout
                 _ = timeout.fuse() => {
                     // Timeout reached
                     return Err(ClientError::TimedOut);
                 }
             };
-            
-            if timeout_interval <= keepalive_interval {
-                return Err(ClientError::TimedOut);
-            } else {
-                timeout_interval -= keepalive_interval;
-            }
         }
     }
 }
