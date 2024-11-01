@@ -463,35 +463,50 @@ where
     #[allow(clippy::single_match)]
     #[cfg(not(target_arch = "wasm32"))]
     async fn tick(&mut self) -> Result<(), ClientError> {
-        use std::time::Duration;
-
         use futures_util::FutureExt;
-
-        let timeout = tokio::time::sleep(Duration::from_secs(self.timeout));
         
-        futures_util::select! {
-            // Handle requests
-            instruction = self.instructions.select_next_some() => {
-                self.service(instruction).await?;
-            },
-            // Handle ws messages
-            resp = self.ws.next() => match resp {
-                Some(Ok(resp)) => self.handle(resp).await?,
-                Some(Err(err)) => {
-                    tracing::error!(?err);
-                    return Err(ClientError::UnexpectedClose);
-                }
-                None => {
-                    return Err(ClientError::UnexpectedClose);
-                },
-            },
-            _ = timeout.fuse() => {
-                // Timeout reached
-                return Err(ClientError::TimedOut);
-            }
-        };
+        let keepalive_interval = 10;
+        let mut timeout_interval = self.timeout;
 
-        Ok(())
+        loop {
+            let keepalive = tokio::time::sleep(std::time::Duration::from_secs(keepalive_interval));
+            let timeout = tokio::time::sleep(std::time::Duration::from_secs(timeout_interval));
+
+            futures_util::select! {
+                _ = keepalive.fuse() => {
+                    self.ws.send(Message::Ping(vec![])).await?;
+                },
+                // Handle requests
+                instruction = self.instructions.select_next_some() => {
+                    self.service(instruction).await?;
+                    return Ok(());
+                },
+                // Handle ws messages
+                resp = self.ws.next() => match resp {
+                    Some(Ok(resp)) => {
+                        self.handle(resp).await?;
+                        return Ok(());
+                    },
+                    Some(Err(err)) => {
+                        tracing::error!(?err);
+                        return Err(ClientError::UnexpectedClose);
+                    }
+                    None => {
+                        return Err(ClientError::UnexpectedClose);
+                    },
+                },
+                _ = timeout.fuse() => {
+                    // Timeout reached
+                    return Err(ClientError::TimedOut);
+                }
+            };
+            
+            if timeout_interval <= keepalive_interval {
+                return Err(ClientError::TimedOut);
+            } else {
+                timeout_interval -= keepalive_interval;
+            }
+        }
     }
 }
 
